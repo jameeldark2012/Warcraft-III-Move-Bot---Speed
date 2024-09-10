@@ -1,23 +1,10 @@
+from stable_baselines3.ppo import PPO
 from environment import WarAMBOT
-import environment
-env =WarAMBOT()
-import keyboard_nofocus
-import time
-from PIL import Image
-#test = captureWindow_screenshot(environment.process_list[env.env_num].window_handle , 1024 , 1024)
-#time.sleep(10)
-# while True:
-#     keyboard_nofocus.press_key( "print_screen", environment.process_list[env.env_num].window_handle , duration= 0.1 , state="down" )
-#     keyboard_nofocus.press_key( "print_screen", environment.process_list[env.env_num].window_handle , duration= 0.1 , state="up" )
+from stable_baselines3.common.env_checker import check_env
+
+env =WarAMBOT.make_env(WarAMBOT)
 
 
-import mss
-import mss.tools
-import win32gui
+model = PPO(env= env , policy="MlpPolicy" , tensorboard_log="logs//PPO" )
 
-
-
-
-# Example usage
-
-print()
+model.learn(total_timesteps=1000 , log_interval=1 , progress_bar= True)

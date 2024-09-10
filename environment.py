@@ -35,7 +35,7 @@ endfunction
             with open(JASS_WRITE_DIR +'\\'+ filename, 'w') as file:
                 file.write(content)
 
-            print("Content written to " + filename )
+            # print("Content written to " + filename )
 
         except :
                 print("Error writing file to Jass retrying ...")
@@ -65,10 +65,10 @@ CUSTOM_MAPDATA_PATH = r"C:\Users\Jamil\Documents\Warcraft III\CustomMapData"
 WGC_PATH = "C:/Warcraft 3/Warcraft III 1.31.1/map-wgc-test/MainMap-playtest.wgc"
 APP_TITLE = "Warcraft III"
 
-# scaler = MinMaxScaler(feature_range=(0, 1))
-# ACTION_SPACE = np.array([[-1200, -3360], [1028, 2904]], dtype=np.float32)
-# ACTION_SPACE = np.random.uniform(low=ACTION_SPACE[0], high=ACTION_SPACE[1], size=(10000, 2))
-
+scaler = MinMaxScaler(feature_range=(-1, 1))
+ACTION_SPACE = np.array([[-1200, -3360], [1028, 2904]], dtype=np.float32)
+ACTION_SPACE = np.random.uniform(low=ACTION_SPACE[0], high=ACTION_SPACE[1], size=(100000, 2))
+scaler.fit(ACTION_SPACE)
 
 process_list = {}
 ENV_SERIAL_NUM = 0
@@ -130,12 +130,12 @@ def capture_window_screenshot(window_title = "Warcraft III" , hwnd =0):
             output = "Observations\window_screenshot" +str(var) + ".png"
             var+=1
             # print(f"Screenshot saved to {output}")
-            print(var)
+            #print(var)
             img = Image.frombytes("RGB", screenshot.size, screenshot.rgb)
             crop_area = (0, img.height-crop_size, crop_size, img.height)  # Adjust these values as needed
             
             cropped_img = img.crop(crop_area)
-            cropped_img = cropped_img.resize((32, 32))
+            cropped_img = cropped_img.resize((64, 64))
 
             return np.array(cropped_img)
 
@@ -191,13 +191,13 @@ class WarAMBOT(gym.Env):
 
         self.observation_space = spaces.Box(low=0,
                                             high=255,
-                                            shape=(128, 128, 128),
+                                            shape=(64, 64, 3),
                                             dtype=np.uint8)
 
         
         self.action_space =     spaces.Box(
-                                low=np.array([self.map_boundary_X[0], self.map_boundary_Y[0]]),
-                                high=np.array([self.map_boundary_X[1], self.map_boundary_Y[1]]),
+                                low=np.array([-1, -1]),
+                                high=np.array([1, 1]),
                                 dtype=np.float32)
 
         self.action_path_x = r"C:\Users\Jamil\Documents\Warcraft III\CustomMapData\actionx_"+ str(self.env_num) + ".txt"
@@ -230,6 +230,7 @@ class WarAMBOT(gym.Env):
             
 
     def send_action(self, action):
+        action = action[0]
         write_to_jass("x_"+ str(self.env_num) + ".txt" , action[0])
         write_to_jass("y_"+ str(self.env_num) + ".txt" , action[1])
         
@@ -246,23 +247,21 @@ class WarAMBOT(gym.Env):
         print("Reset Game State Initilized")
         init_process(self.env_num)
         time.sleep(3)
+        self.time_track = time.time()
         observation = capture_window_screenshot( hwnd = process_list[self.env_num].window_handle)
         
 
         return observation , {}
 
     def step(self , action):
-        
+        action = scaler.inverse_transform(action.reshape(1, -1))
         #PLEASE DONT FORGET TO REMOVE THIS RANDOM ACTION GENERATION PLEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAASE OMG 
-        action = [  self.action_space.sample() ]
-        print()
-        done = 0
-        #time.sleep(3)
-        print("Action: " , action)
+        #action = self.action_space.sample() 
+        # print("Action: " , action)
         self.send_action(action)
         write_to_jass(self.ACTION_QUEUE_PATH , "1")
-        keyboard_nofocus.press_key("left_arrow" , process_list[ENV_SERIAL_NUM].window_handle ,duration=0.1 , state="down")
-        keyboard_nofocus.press_key("left_arrow" , process_list[ENV_SERIAL_NUM].window_handle ,duration=0.1 , state="up")
+        keyboard_nofocus.press_key("left_arrow" , process_list[ENV_SERIAL_NUM].window_handle ,duration=0.001 , state="down")
+        keyboard_nofocus.press_key("left_arrow" , process_list[ENV_SERIAL_NUM].window_handle ,duration=0.001 , state="up")
         
         action_queue_is_full = True
         temp = 1
@@ -272,27 +271,9 @@ class WarAMBOT(gym.Env):
             if int(temp) == 0 :
                     action_queue_is_full = False
 
-            done =   extract_message_from_jass(self.DONE_PATH)
             temp =   extract_message_from_jass(JASS_WRITE_DIR +"\\"+ self.ACTION_QUEUE_PATH)
 
-            if int(done)== 1:
-                write_to_jass(self.ACTION_QUEUE_PATH , "1")
-                loaded = False 
-
-                while not loaded :
-                    loaded = bool(extract_message_from_jass(self.LOADING_PATH))
-                    print("Loading map ...")
-                    time.sleep(0.1)
-
-                keyboard_nofocus.press_key("left_arrow" , process_list[ENV_SERIAL_NUM].window_handle ,duration=0.1 , state="down")
-                keyboard_nofocus.press_key("left_arrow" , process_list[ENV_SERIAL_NUM].window_handle ,duration=0.1 , state="up")
-                action_queue_is_full = True
-
-
-             
-
-
-                break
+   
 
             # if time.time() - start_time >= 6:
             #     time.sleep(6)
@@ -303,26 +284,22 @@ class WarAMBOT(gym.Env):
                 
 
         reward = self.calculate_reward()
-        done =   extract_message_from_jass(self.DONE_PATH)
 
-        if int(done) == 0 :
-             done = False
-        else:
-             done = True
-             write_to_jass("done_" + str(self.env_num) + ".txt", 0)
-        
+        done = False
 
-        print("Total step reward : " , str(reward) , " Enviroment: " , self.env_num)
+        if time.time() - self.time_track > self.episode_duration:
+            done = True
+            self.time_track = time.time()
+
+        # print("Total step reward : " , str(reward) , " Enviroment: " , self.env_num)
         self.total_reward += int(reward)
-        print("Total reward :" , self.total_reward , " Enviroment: " , self.env_num)
+        # print("Total reward :" , self.total_reward , " Enviroment: " , self.env_num)
 
-        observation = action
-        observation = []
+        observation = capture_window_screenshot( hwnd = process_list[self.env_num].window_handle)
         info = {}
         truncated = False
-        print()
+
         return observation  ,reward, done, truncated, info
 
  
         
-            
