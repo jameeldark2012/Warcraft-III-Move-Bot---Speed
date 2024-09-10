@@ -9,6 +9,10 @@ import time
 from gymnasium import spaces
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
+import mss
+from PIL import Image
+import random
+
 print()
 JASS_WRITE_DIR =  r"C:\Users\Jamil\Documents\Warcraft III\CustomMapData"
 
@@ -100,6 +104,45 @@ def init_process(env_serial_num):
         process = Process(proc.pid, hwnd , proc)
         process_list[env_serial_num] = process
 
+var = 0
+def capture_window_screenshot(window_title = "Warcraft III" , hwnd =0):
+    global var
+
+    crop_size = 200
+    try:
+        # Find the window by title
+        
+        if not hwnd:
+            raise Exception(f"Window with title '{window_title}' not found.")
+
+        # Get the window's position and size
+        rect = win32gui.GetWindowRect(hwnd)
+        left, top, right, bottom = rect
+        width = right - left
+        height = bottom - top
+
+        # Capture the screenshot of the specific window
+        with mss.mss() as sct:
+            monitor = {"top": top, "left": left, "width": width, "height": height}
+            screenshot = sct.grab(monitor)
+
+            # Save the screenshot
+            output = "Observations\window_screenshot" +str(var) + ".png"
+            var+=1
+            # print(f"Screenshot saved to {output}")
+            print(var)
+            img = Image.frombytes("RGB", screenshot.size, screenshot.rgb)
+            crop_area = (0, img.height-crop_size, crop_size, img.height)  # Adjust these values as needed
+            
+            cropped_img = img.crop(crop_area)
+            cropped_img = cropped_img.resize((32, 32))
+
+            return np.array(cropped_img)
+
+    except Exception as e:
+        print(f"Failed to capture screenshot: {e}")
+        return None
+
      
 class WarAMBOT(gym.Env):
     metadata = {"render.modes": ["human"]}
@@ -112,6 +155,9 @@ class WarAMBOT(gym.Env):
             variable = extract_message_from_jass(path)
 
         return variable
+    
+    
+
 
 
     def write_env_number(self):
@@ -145,7 +191,7 @@ class WarAMBOT(gym.Env):
 
         self.observation_space = spaces.Box(low=0,
                                             high=255,
-                                            shape=(32, 32, 3),
+                                            shape=(128, 128, 128),
                                             dtype=np.uint8)
 
         
@@ -166,6 +212,8 @@ class WarAMBOT(gym.Env):
         init_process(ENV_SERIAL_NUM)
        
         self.write_env_number()
+        self.time_track = time.time()
+        self.episode_duration = 30
 
         # Add if game loded or not check here________________ WAITING FOR THE INSTANCE TO LOAD __________________________________________
 
@@ -173,7 +221,7 @@ class WarAMBOT(gym.Env):
         
         env = WarAMBOT()
         #Monitor(env ,"logs/")
-        return env
+        return Monitor(env)
     
     def close(self):
         process_list[ENV_SERIAL_NUM].process.terminate()
@@ -194,19 +242,20 @@ class WarAMBOT(gym.Env):
 
             
     def reset(self , seed = 0):
-
+        self.close()
         print("Reset Game State Initilized")
-        write_to_jass("done_" + str(self.env_num) + ".txt", 0)
-        observation = []
+        init_process(self.env_num)
         time.sleep(3)
+        observation = capture_window_screenshot( hwnd = process_list[self.env_num].window_handle)
+        
 
-        return (observation , {})
+        return observation , {}
 
     def step(self , action):
-        action = []
         
         #PLEASE DONT FORGET TO REMOVE THIS RANDOM ACTION GENERATION PLEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAASE OMG 
-        #action = [  random.randint(self.map_boundary_X[0],self.map_boundary_X[1]) ,  random.randint(self.map_boundary_Y[0],self.map_boundary_Y[1]) ]
+        action = [  self.action_space.sample() ]
+        print()
         done = 0
         #time.sleep(3)
         print("Action: " , action)
@@ -268,7 +317,7 @@ class WarAMBOT(gym.Env):
         print("Total reward :" , self.total_reward , " Enviroment: " , self.env_num)
 
         observation = action
-        observation = []]
+        observation = []
         info = {}
         truncated = False
         print()
